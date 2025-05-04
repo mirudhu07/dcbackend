@@ -231,7 +231,200 @@ app.post("/send-to-admin", (req, res) => {
     }
   );
 });
-                                                                                                        
+
+ // Fetching all PDFs
+app.get("/api/student-pdfs", (req, res) => {
+  console.log("Fetching all PDFs");
+  const sql = "SELECT * FROM student_pdfs";
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Error fetching PDFs:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    res.json(results);
+  });
+});                                                                                             
+
+// Fetching PDFs for a specific student
+app.get("/api/student-pdfs/:studentId", (req, res) => {
+  const studentId = req.params.studentId;
+  const sql = "SELECT * FROM student_pdfs WHERE student_id = ?";
+  db.query(sql, [studentId], (err, results) => {
+    if (err) {
+      console.error("Error fetching PDFs:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    res.json(results);
+  });
+});
+
+// Adding a new PDF
+app.post("/api/student-pdfs", (req, res) => {
+  const { student_id, pdf_name, pdf_src } = req.body;
+
+  if (!student_id || !pdf_name || !pdf_src) {
+    return res.status(400).json({ message: "Student ID, PDF name, and PDF source are required" });
+  }
+
+  const sql = "INSERT INTO student_pdfs (student_id, pdf_name, pdf_src) VALUES (?, ?, ?)";
+  db.query(sql, [student_id, pdf_name, pdf_src], (err, result) => {
+    if (err) {
+      console.error("Error inserting PDF:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    res.json({ message: "PDF added successfully", id: result.insertId });
+  });
+});
+
+//  static files
+app.use("/assets", express.static(path.join(__dirname, "../FrontEnd/D.C/public/assets")));
+
+// INSERTING meeting details
+app.post("/api/meeting-details", (req, res) => {
+  console.log("Request Body:", req.body); 
+  const { studentId, venue, date, time, reason } = req.body;
+
+  if (!studentId || !venue || !date || !time || !reason) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
+  const sql = `
+    INSERT INTO meeting_details (S_ID, VENUE, DATE_, TIME_, INFO, STATUS_)
+    VALUES (?, ?, STR_TO_DATE(?, '%Y-%m-%d'), ?, ?, 'pending')
+  `;
+
+  db.query(sql, [studentId, venue, date, time, reason], (err, result) => {
+    if (err) {
+      console.error("Error inserting data into meeting_details:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    res.status(201).json({ message: "Meeting details added successfully" });
+  });
+});
+
+// FOR FETCHING meeting details in card
+app.get("/api/meeting-details", (req, res) => {
+  const sql = `
+    SELECT No_ AS id, S_ID AS sId, VENUE AS venue, DATE_FORMAT(DATE_, '%d-%m-%Y') AS date, 
+           TIME_FORMAT(TIME_, '%h:%i %p') AS time, INFO AS info, STATUS_ AS status
+    FROM meeting_details
+    ORDER BY No_ DESC
+  `;
+
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Error fetching meeting details:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+    res.json(results);
+  });
+});
+
+//FOR UPDATING ATTENDANCE IN MEETING
+app.post("/api/update-attendance", (req, res) => {
+  const { sId, venue, date, status } = req.body;
+
+  if (!sId || !venue || !date || !status) {
+    console.error("Missing required fields:", req.body); // Debug log
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  console.log("Received data:", req.body); // Debug log
+
+  const sql = `
+    UPDATE meeting_details 
+    SET STATUS_ = ? 
+    WHERE S_ID = ? AND VENUE = ? AND DATE_ = STR_TO_DATE(?, '%d-%m-%Y')
+  `;
+
+  db.query(sql, [status, sId, venue, date], (err, result) => {
+    if (err) {
+      console.error("Error updating attendance:", err); // Debug log
+      return res.status(500).json({ message: "Database error", error: err.message });
+    }
+
+    console.log("SQL Result:", result); // Debug log
+
+    if (result.affectedRows > 0) {
+      res.json({ message: "Attendance updated successfully" });
+    } else {
+      res.status(404).json({ message: "Meeting not found" });
+    }
+  });
+});
+
+// Fetch complaints for a specific student ID
+app.get("/api/complaints/:S_ID", (req, res) => {
+  const { S_ID } = req.params;
+
+  const sql = `
+    SELECT complaint_id, S_ID, student_name, faculty_name, time_date, comment, venue,
+    TIMESTAMPDIFF(SECOND, NOW(), ADDTIME(time_date, '06:00:00')) AS time_remaining
+    FROM faculty_logger
+    WHERE S_ID = ?
+    ORDER BY time_date DESC
+  `;
+
+  db.query(sql, [S_ID], (err, result) => {
+    if (err) {
+      console.error("Error fetching complaints:", err);
+      return res.status(500).json({ error: "Failed to fetch complaints" });
+    }
+
+    res.status(200).json(result); // Send all matching complaints
+  });
+});
+
+// For updating history
+app.put('/complaints/update-status/:sid/:complaint_id', (req, res) => {
+  const { sid, complaint_id } = req.params; // Extract S_ID and complaint_id from URL
+  const { status } = req.body; // Extract status from request body
+
+  const sql = 'UPDATE faculty_logger SET status = ? WHERE S_ID = ? AND complaint_id = ?';
+  db.query(sql, [status, sid, complaint_id], (err, result) => {
+    if (err) {
+      console.error('Error updating complaint status:', err);
+      return res.status(500).json({ error: 'Failed to update status' });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'No matching complaint found to update' });
+    }
+
+    res.status(200).json({ message: 'Status updated successfully' });
+  });
+});
+
+// Endpoint to fetch complaint details
+app.get('/complaints/detail/:complaint_id', (req, res) => {
+  const { complaint_id } = req.params;
+
+  const sql = 'SELECT * FROM faculty_logger WHERE complaint_id = ?';
+  db.query(sql, [complaint_id], (err, result) => {
+    if (err) {
+      console.error('Error fetching complaint details:', err);
+      return res.status(500).json({ error: 'Failed to fetch complaint details' });
+    }
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+
+    res.status(200).json(result[0]); // Return the complaint details
+  });
+});
+
+// fetching complaints from admin table
+app.get("/api/admin-all", (req, res) => {
+  const query = `SELECT student_name, S_ID, Date_, Time_, Venue, Comment, faculty FROM admin_ ORDER BY ID DESC`; 
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error("Error fetching admin complaints:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+    res.json(results);
+  });
+});
 
 
 // ✅ Start server
