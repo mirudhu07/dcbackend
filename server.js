@@ -80,31 +80,55 @@ app.post("/api/log-entry", (req, res) => {
     return res.status(400).json({ error: "Missing fields" });
   }
 
-  const sql = `
-    INSERT INTO faculty_logger (S_ID, student_name, faculty_name, time_date, comment, venue, photo)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  db.query(
-    sql,
-    [
-      S_ID && S_ID.trim() !== "" ? S_ID : null,
-      student_name && student_name.trim() !== "" ? student_name : null,
-      faculty_name,
-      time_date,
-      comment,
-      venue,
-      photo || null,
-    ],
-    (err, result) => {
+  // Allow multiple "malpractice" logs, but prevent duplicates for other complaints
+  if (comment !== "malpractice") {
+    const checkSql = `
+      SELECT COUNT(*) as cnt FROM faculty_logger
+      WHERE S_ID = ? AND comment = ? AND faculty_name = ?
+    `;
+    db.query(checkSql, [S_ID, comment, faculty_name], (err, results) => {
       if (err) {
-        console.error("Error inserting log:", err);
-        return res.status(500).json({ error: "Failed to create log", details: err.message });
+        console.error("Error checking for duplicate log:", err);
+        return res.status(500).json({ error: "Failed to check duplicate log", details: err.message });
       }
-      res.status(201).json({ message: "Log entry created" });
-    }
-  );
+      if (results[0].cnt > 0) {
+        return res.status(409).json({ error: "Duplicate log for this student and complaint." });
+      }
+      // Insert log if not duplicate
+      insertLog();
+    });
+  } else {
+    // Insert log for malpractice
+    insertLog();
+  }
+
+  function insertLog() {
+    const sql = `
+      INSERT INTO faculty_logger (S_ID, student_name, faculty_name, time_date, comment, venue, photo)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+    db.query(
+      sql,
+      [
+        S_ID && S_ID.trim() !== "" ? S_ID : null,
+        student_name && student_name.trim() !== "" ? student_name : null,
+        faculty_name,
+        time_date,
+        comment,
+        venue,
+        photo || null,
+      ],
+      (err, result) => {
+        if (err) {
+          console.error("Error inserting log:", err);
+          return res.status(500).json({ error: "Failed to create log", details: err.message });
+        }
+        res.status(201).json({ message: "Log entry created" });
+      }
+    );
+  }
 });
+
 
 // Add this to your server.js (or replace the existing POST /logger)
 /* app.post("/logger", (req, res) => {
