@@ -10,6 +10,55 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// Login authentication endpoint
+app.post("/api/login", (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ message: "Username and password are required" });
+  }
+
+  const sql = "SELECT PASS_WORD, S_ID, USERNAME FROM login WHERE USERNAME = ?";
+  db.query(sql, [username], (err, results) => {
+    if (err) {
+      console.error("Error during login query:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+
+    if (results.length === 0) {
+      return res.status(401).json({ message: "Invalid username or password" });
+    }
+
+    const user = results[0];
+
+    if (password === "faculty") {
+      return res.status(200).json({
+        message: "Login successful",
+        route: "/logger1",
+        username: user.USERNAME, 
+        faculty_name: user.USERNAME, 
+      });
+    }
+
+    if (user.PASS_WORD !== password) {
+      return res.status(401).json({ message: "Invalid username or password" });
+    }
+
+    
+    const predefinedRoutes = {
+      "7376242AD267": "/student1_1",
+      "7376242CS111": "/student2_1",
+      "7376242IT201": "/student3_1",
+      "7376242AD199": "/student4_1",
+      "7376242AL165": "/student5_1",
+    };
+
+    const route = predefinedRoutes[user.S_ID] || "recent_complaints"; 
+
+    res.status(200).json({ message: "Login successful", route, S_ID: user.S_ID, username: user.USERNAME });
+  });
+});
+
 // ✅ Fetch all students
 app.get("/students", (req, res) => {
   const query = "SELECT S_ID, name FROM student_details";
@@ -23,18 +72,17 @@ app.get("/students", (req, res) => {
 });
 
 // ✅ Create log entry (used by Logger.jsx)
+// server.js
 app.post("/api/log-entry", (req, res) => {
-  const { S_ID, student_name, faculty_name, time_date, comment, venue } = req.body;
-
-  console.log("Received log data:", req.body);
+  const { S_ID, student_name, faculty_name, time_date, comment, venue, photo } = req.body;
 
   if (!faculty_name || !time_date || !comment || !venue) {
-    return res.status(400).json({ error: "All fields are required" });
+    return res.status(400).json({ error: "Missing fields" });
   }
 
   const sql = `
-    INSERT INTO faculty_logger (S_ID, student_name, faculty_name, time_date, comment, venue)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO faculty_logger (S_ID, student_name, faculty_name, time_date, comment, venue, photo)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `;
 
   db.query(
@@ -45,7 +93,8 @@ app.post("/api/log-entry", (req, res) => {
       faculty_name,
       time_date,
       comment,
-      venue
+      venue,
+      photo || null,
     ],
     (err, result) => {
       if (err) {
@@ -57,8 +106,48 @@ app.post("/api/log-entry", (req, res) => {
   );
 });
 
+// Add this to your server.js (or replace the existing POST /logger)
+/* app.post("/logger", (req, res) => {
+  const { S_ID, student_name, faculty_name, time_date, comment, venue } = req.body;
+
+  console.log("Received log data:", req.body);
+
+  // Validate required fields
+  if (!faculty_name || !time_date || !comment || !venue) {
+    return res.status(400).json({ error: "All fields are required" });
+  }
+
+  // Prepare query
+  const sql = `
+    INSERT INTO faculty_logger (S_ID, student_name, faculty_name, time_date, comment, venue)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `;
+
+  // Execute insert
+  db.query(
+    sql,
+    [
+      S_ID?.trim() || null,
+      student_name?.trim() || null,
+      faculty_name?.trim(),
+      time_date,
+      comment,
+      venue,
+    ],
+    (err, result) => {
+      if (err) {
+        console.error("Error inserting log:", err);
+        return res.status(500).json({ error: "Failed to insert log", details: err.message });
+      }
+
+      console.log("Log inserted successfully");
+      return res.status(201).json({ message: "Log entry created" });
+    }
+  );
+}); */
+
 // ✅ POST a revoked complaint
-app.post("/api/revoked", (req, res) => {
+/* app.post("/api/revoked", (req, res) => {
   const { roll_no, s_name, reason, complaint_id } = req.body;
 
   if (!roll_no || !s_name || !reason || !complaint_id) {
@@ -110,6 +199,103 @@ app.put("/api/revoked/:roll_no", (req, res) => {
     res.json({ message: `Complaint ${status}` });
   });
 });
+ */
+app.post("/api/reason", (req, res) => {
+  const { complaintCode, reason } = req.body;
+
+  if (!complaintCode || !reason) {
+    return res.status(400).json({ error: "Complaint Code and Reason are required." });
+  }
+
+  
+  const fetchQuery = `
+    SELECT student_name, S_ID, comment 
+    FROM faculty_logger 
+    WHERE complaint_id = ?
+  `;
+
+  db.query(fetchQuery, [complaintCode], (fetchErr, fetchResult) => {
+    if (fetchErr) {
+      console.error("Error fetching from faculty_logger:", fetchErr);
+      return res.status(500).json({ error: "Database fetch error" });
+    }
+
+    if (fetchResult.length === 0) {
+      return res.status(404).json({ error: "Complaint ID not found in faculty_logger." });
+    }
+
+    const { student_name, S_ID, comment } = fetchResult[0];
+
+    // Step 2: Now insert into reason_ table
+    const insertQuery = `
+      INSERT INTO reason_ (complaint_id, REASON, S_name, Roll_no, issue)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+    const insertValues = [complaintCode, reason, student_name, S_ID, comment];
+
+    db.query(insertQuery, insertValues, (insertErr, insertResult) => {
+      if (insertErr) {
+        console.error("Error inserting into reason_:", insertErr);
+        return res.status(500).json({ error: "Database insert error" });
+      }
+      res.status(200).json({ message: "Reason and related info submitted successfully." });
+    });
+  });
+});
+
+
+
+// ✅ GET all revoked complaints with joined info
+app.get("/api/revoked", (req, res) => {
+  const sql = `
+    SELECT 
+      complaint_id,
+      S_name,
+      Roll_no,
+      REASON 
+    FROM reason_
+  `;
+
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Error fetching revoked complaints:", err);
+      return res.status(500).json({ error: "Database error", details: err.message });
+    }
+    res.json(results);
+  });
+});
+
+app.put("/api/revoked/:id", (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  console.log("Received PUT /api/revoked/:id =>", id, status); // ✅ Debug log
+
+  if (!status || !id) {
+    return res.status(400).json({ error: "Status and complaint_id are required." });
+  }
+
+  const updateFacultyLogger = `UPDATE faculty_logger SET Status_ = ? WHERE complaint_id = ?`;
+  const updateReason = `UPDATE reason_ SET Status_ = ? WHERE complaint_id = ?`;
+
+  db.query(updateFacultyLogger, [status, id], (err, result1) => {
+    if (err) {
+      console.error(" Error updating faculty_logger:", err);
+      return res.status(500).json({ error: "Error updating faculty_logger", details: err.message });
+    }
+
+    db.query(updateReason, [status, id], (err, result2) => {
+      if (err) {
+        console.error(" Error updating reason_:", err);
+        return res.status(500).json({ error: "Error updating reason_", details: err.message });
+      }
+
+      console.log(" Successfully updated both tables for complaint_id:", id);
+      res.status(200).json({ message: "Status updated successfully in both tables!" });
+    });
+  });
+});
+
 
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) {
@@ -140,20 +326,23 @@ app.get("/api/support-logs", (req, res) => {
   });
 });
 
+// ✅ Multer upload setup (already declared earlier in your file)
 const upload = multer({ storage });
+
+// ✅ POST: Send video and description to mentor queue
 app.post("/api/support/send", upload.single("video"), (req, res) => {
-  const { complaint_id } = req.body;
+  const { complaint_id, description } = req.body;
   const videoPath = req.file ? req.file.path : null;
 
-  if (!complaint_id || !videoPath) {
+  if (!complaint_id || !videoPath || !description) {
     return res.status(400).json({ error: "Missing data" });
   }
 
   const sql = `
-    INSERT INTO mentor_queue (complaint_id, video_path)
-    VALUES (?, ?)
+    INSERT INTO mentor_queue (complaint_id, video_path, description)
+    VALUES (?, ?, ?)
   `;
-  db.query(sql, [complaint_id, videoPath], (err, result) => {
+  db.query(sql, [complaint_id, videoPath, description], (err, result) => {
     if (err) {
       console.error("Error sending to mentor:", err);
       return res.status(500).json({ error: "Send failed" });
@@ -162,7 +351,7 @@ app.post("/api/support/send", upload.single("video"), (req, res) => {
   });
 });
 
-// ✅ GET mentor queue (videos forwarded from support desk)
+// ✅ GET: Mentor queue (videos forwarded from support desk)
 app.get("/api/mentor-queue", (req, res) => {
   const sql = "SELECT * FROM mentor_queue";
 
@@ -174,6 +363,7 @@ app.get("/api/mentor-queue", (req, res) => {
     res.json(results);
   });
 });
+
 
 // ✅ Mentor submits complaint to faculty_logger
 app.post("/api/mentor/submit", (req, res) => {
