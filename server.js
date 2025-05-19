@@ -80,25 +80,23 @@ app.post("/api/log-entry", (req, res) => {
     return res.status(400).json({ error: "Missing fields" });
   }
 
-  // Allow multiple "malpractice" logs, but prevent duplicates for other complaints
-  if (comment !== "malpractice") {
+  // Only check duplicates for non-malpractice AND student-associated entries
+  if (comment !== "malpractice" && S_ID) {
     const checkSql = `
       SELECT COUNT(*) as cnt FROM faculty_logger
-      WHERE S_ID = ? AND comment = ? AND faculty_name = ?
+      WHERE S_ID = ? AND comment = ?
     `;
-    db.query(checkSql, [S_ID, comment, faculty_name], (err, results) => {
+    db.query(checkSql, [S_ID, comment], (err, results) => {
       if (err) {
         console.error("Error checking for duplicate log:", err);
         return res.status(500).json({ error: "Failed to check duplicate log", details: err.message });
       }
       if (results[0].cnt > 0) {
-        return res.status(409).json({ error: "Duplicate log for this student and complaint." });
+        return res.status(409).json({ error: "This complaint already exists for the student." });
       }
-      // Insert log if not duplicate
       insertLog();
     });
   } else {
-    // Insert log for malpractice
     insertLog();
   }
 
