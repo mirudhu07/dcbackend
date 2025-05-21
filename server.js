@@ -348,12 +348,13 @@ app.get("/api/support-logs", (req, res) => {
   });
 });
 
-// ✅ Multer upload setup (already declared earlier in your file)
 const upload = multer({ storage });
 
 // ✅ POST: Send video and description to mentor queue
 app.post("/api/support/send", upload.single("video"), (req, res) => {
-  const { complaint_id, description } = req.body;
+  // Get fields from form-data
+  const complaint_id = req.body.complaint_id;
+  const description = req.body.description;
   const videoPath = req.file ? req.file.path : null;
 
   if (!complaint_id || !videoPath || !description) {
@@ -372,6 +373,7 @@ app.post("/api/support/send", upload.single("video"), (req, res) => {
     res.status(200).json({ message: "Sent to mentor" });
   });
 });
+
 
 // ✅ GET: Mentor queue (videos forwarded from support desk)
 app.get("/api/mentor-queue", (req, res) => {
@@ -428,12 +430,12 @@ app.post("/send-to-admin", (req, res) => {
   const { student_name, S_ID, Date_, Time_, Venue, Comment, faculty } = req.body;
 
   const query = `
-    INSERT INTO admin_ (student_name, S_ID, Date_, Time_, Venue, Comment, faculty)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO admin_ (student_name, S_ID, Date_, Time_, Venue, Comment, faculty, photo)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `;
   db.query(
     query,
-    [student_name, S_ID, Date_, Time_, Venue, Comment, faculty],
+    [student_name, S_ID, Date_, Time_, Venue, Comment, faculty, photo],
     (err, result) => {
       if (err) {
         console.error("Error inserting into admin_:", err);
@@ -443,6 +445,16 @@ app.post("/send-to-admin", (req, res) => {
     }
   );
 });
+app.get("/faculty-logger", (req, res) => {
+  db.query("SELECT * FROM faculty_logger", (err, results) => {
+    if (err) {
+      console.error("Error fetching faculty logs:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+    res.json(results);
+  });
+});
+
 
  // Fetching all PDFs
 app.get("/api/student-pdfs", (req, res) => {
